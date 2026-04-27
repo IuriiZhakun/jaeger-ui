@@ -102,6 +102,10 @@ const defaultConfig: Config = {
   traceGraph: {
     layoutManagerMemory: undefined,
   },
+  schemaValues: {
+    enabled: true,
+    registries: [],
+  },
 
   deepDependencies: {
     menuEnabled: false,

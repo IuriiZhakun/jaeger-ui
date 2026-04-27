@@ -13,6 +13,7 @@ import DetailState from './DetailState';
 import { formatDuration } from '../utils';
 import CopyIcon from '../../../common/CopyIcon';
 import LabeledList from '../../../common/LabeledList';
+import SchemaValuesPanel from './SchemaValuesPanel';
 
 import { TNil } from '../../../../types';
 import { Hyperlink } from '../../../../types/hyperlink';
@@ -117,6 +118,7 @@ export default function SpanDetail(props: SpanDetailProps) {
             />
           )}
         </div>
+        <SchemaValuesPanel span={span} />
         {span.events && span.events.length > 0 && (
           <AccordionEvents
             linksGetter={linksGetter}
