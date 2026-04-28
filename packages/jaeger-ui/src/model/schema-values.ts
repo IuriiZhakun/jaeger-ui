@@ -5,6 +5,7 @@ import { IAttribute, IOtelSpan } from '../types/otel';
 import { SchemaValuesConfig, SchemaValuesFieldConfig, SchemaValuesRegistryConfig } from '../types/config';
 
 const SUPPORTED_ENCODING = 'schema_values_json';
+const REGISTRY_MESSAGE_CARRIER_KEY = 'sv';
 
 const ENVELOPE_KEYS = [
   'payload.schema_id',
@@ -27,16 +28,18 @@ type TEnvelopeSource = {
 type TDecodedSchemaValuesPayload = {
   decoded: TJsonObject;
   displayName: string;
-  encoding: string;
+  encoding?: string;
+  messageTypeId?: string;
   schemaId: string;
   source: string;
   status: 'decoded';
-  typeId: string;
+  typeId?: string;
 };
 
 type TSchemaValuesPayloadError = {
   errorCode: string;
   errorMessage: string;
+  messageTypeId?: string;
   schemaId?: string;
   source: string;
   status: 'error';
@@ -87,6 +90,22 @@ function buildEnvelope(source: TEnvelopeSource): SchemaValuesEnvelope | TSchemaV
   return envelope as SchemaValuesEnvelope;
 }
 
+function buildRegistryMessageCarrier(source: TEnvelopeSource): string | TSchemaValuesPayloadError | null {
+  const value = attributesByKey(source.attributes).get(REGISTRY_MESSAGE_CARRIER_KEY);
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'string' || value.length === 0) {
+    return {
+      errorCode: 'invalid_registry_message',
+      errorMessage: `${REGISTRY_MESSAGE_CARRIER_KEY} must be a non-empty string`,
+      source: source.label,
+      status: 'error',
+    };
+  }
+  return value;
+}
+
 function registryBySchemaId(
   config: SchemaValuesConfig | undefined,
   schemaId: string
@@ -95,6 +114,20 @@ function registryBySchemaId(
     return null;
   }
   return config?.registries?.find(registry => registry.schemaId === schemaId) ?? null;
+}
+
+function registryMessageByMessageTypeId(config: SchemaValuesConfig | undefined, messageTypeId: string) {
+  if (config?.enabled === false) {
+    return null;
+  }
+  const matches =
+    config?.registries
+      ?.map(registry => ({ definition: registry.messages?.[messageTypeId], registry }))
+      .filter(match => match.definition) ?? [];
+  if (matches.length > 1) {
+    fail('ambiguous_message_type_id', `messageTypeId ${messageTypeId} is defined by multiple registries`);
+  }
+  return matches[0] ?? null;
 }
 
 function fail(errorCode: string, errorMessage: string): never {
@@ -106,6 +139,16 @@ function requireString(value: unknown, name: string): string {
     fail('invalid_field_definition', `${name} must be a non-empty string`);
   }
   return value;
+}
+
+function messageTypeIdKey(value: unknown): string {
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return String(value);
+  }
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
+  }
+  fail('invalid_registry_message', 'messageTypeId must be a string or integer');
 }
 
 function typeDefinition(registry: SchemaValuesRegistryConfig, typeId: string) {
@@ -240,6 +283,112 @@ function decodeFieldValue(
   }
 }
 
+function decodeRegistryMessageCarrier(
+  config: SchemaValuesConfig | undefined,
+  source: string,
+  carrierJson: string
+): TSchemaValuesPayload {
+  let messageTypeId = '';
+  let schemaId: string | undefined;
+  try {
+    let values: unknown;
+    try {
+      values = JSON.parse(carrierJson);
+    } catch (error) {
+      fail(
+        'malformed_registry_message_json',
+        `${REGISTRY_MESSAGE_CARRIER_KEY} is not valid JSON: ${String(error)}`
+      );
+    }
+    if (!Array.isArray(values) || values.length === 0) {
+      fail(
+        'invalid_registry_message',
+        `${REGISTRY_MESSAGE_CARRIER_KEY} must decode to a non-empty JSON array`
+      );
+    }
+
+    messageTypeId = messageTypeIdKey(values[0]);
+    const match = registryMessageByMessageTypeId(config, messageTypeId);
+    if (!match) {
+      fail('unknown_message_type_id', `unknown schema-values messageTypeId ${messageTypeId}`);
+    }
+    const { registry } = match;
+    const { definition } = match;
+    if (!definition) {
+      fail('unknown_message_type_id', `unknown schema-values messageTypeId ${messageTypeId}`);
+    }
+    schemaId = registry.schemaId;
+
+    if (definition.typeId) {
+      if (definition.argTypeIds) {
+        fail(
+          'invalid_message_definition',
+          'registry message must define either typeId or argTypeIds, not both'
+        );
+      }
+      const typeId = requireString(definition.typeId, `messages.${messageTypeId}.typeId`);
+      const decoded = decodeTypeValues(registry, typeId, values.slice(1));
+      const displayName = String(
+        definition.displayName ?? typeDefinition(registry, typeId).displayName ?? typeId
+      );
+      return {
+        decoded,
+        displayName,
+        messageTypeId,
+        schemaId,
+        source,
+        status: 'decoded',
+        typeId,
+      };
+    }
+
+    if (!Array.isArray(definition.argTypeIds) || definition.argTypeIds.length === 0) {
+      fail('invalid_message_definition', 'registry message must define typeId or non-empty argTypeIds');
+    }
+
+    const payloadArgs = values.slice(1);
+    if (payloadArgs.length !== definition.argTypeIds.length) {
+      fail('message_arg_count_mismatch', 'registry message payload argument count does not match argTypeIds');
+    }
+
+    const decodedArgs = definition.argTypeIds.map((rawTypeId, index) => {
+      const typeId = requireString(rawTypeId, `messages.${messageTypeId}.argTypeIds[${index}]`);
+      const argValues = payloadArgs[index];
+      if (!Array.isArray(argValues)) {
+        fail('invalid_registry_message_arg', 'registry message argument value must be a positional array');
+      }
+      return {
+        displayName: String(typeDefinition(registry, typeId).displayName ?? typeId),
+        typeId,
+        value: decodeTypeValues(registry, typeId, argValues),
+      };
+    });
+
+    const decoded: TJsonObject = { args: decodedArgs };
+    if (typeof definition.template === 'string') {
+      decoded.template = definition.template;
+    }
+
+    return {
+      decoded,
+      displayName: String(definition.displayName ?? messageTypeId),
+      messageTypeId,
+      schemaId,
+      source,
+      status: 'decoded',
+    };
+  } catch (error) {
+    return {
+      errorCode: String((error as { errorCode?: unknown }).errorCode ?? 'schema_values_decode_failed'),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      messageTypeId: messageTypeId || undefined,
+      schemaId,
+      source,
+      status: 'error',
+    };
+  }
+}
+
 function decodeEnvelope(
   config: SchemaValuesConfig | undefined,
   source: string,
@@ -306,13 +455,20 @@ export function materializeSchemaValuesPayloads(
   ];
 
   return sources.flatMap(source => {
+    const payloads: TSchemaValuesPayload[] = [];
+
+    const carrier = buildRegistryMessageCarrier(source);
+    if (carrier) {
+      payloads.push(
+        typeof carrier === 'string' ? decodeRegistryMessageCarrier(config, source.label, carrier) : carrier
+      );
+    }
+
     const envelope = buildEnvelope(source);
-    if (!envelope) {
-      return [];
+    if (envelope) {
+      payloads.push('status' in envelope ? envelope : decodeEnvelope(config, source.label, envelope));
     }
-    if ('status' in envelope) {
-      return [envelope];
-    }
-    return [decodeEnvelope(config, source.label, envelope)];
+
+    return payloads;
   });
 }

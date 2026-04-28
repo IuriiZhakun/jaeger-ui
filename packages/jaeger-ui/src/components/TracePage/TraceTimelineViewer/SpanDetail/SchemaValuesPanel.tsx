@@ -27,10 +27,24 @@ function MaterializedPayload({ payload }: { payload: Extract<TSchemaValuesPayloa
       <dl className="SchemaValuesPanel--metadata">
         <dt>Schema ID</dt>
         <dd>{payload.schemaId}</dd>
-        <dt>Type ID</dt>
-        <dd>{payload.typeId}</dd>
-        <dt>Encoding</dt>
-        <dd>{payload.encoding}</dd>
+        {payload.messageTypeId && (
+          <>
+            <dt>Message Type ID</dt>
+            <dd>{payload.messageTypeId}</dd>
+          </>
+        )}
+        {payload.typeId && (
+          <>
+            <dt>Type ID</dt>
+            <dd>{payload.typeId}</dd>
+          </>
+        )}
+        {payload.encoding && (
+          <>
+            <dt>Encoding</dt>
+            <dd>{payload.encoding}</dd>
+          </>
+        )}
       </dl>
       <JsonView
         data={payload.decoded}
@@ -84,7 +98,7 @@ export default function SchemaValuesPanel({ schemaValuesConfig, span }: SchemaVa
       {payloads.map((payload, index) =>
         payload.status === 'decoded' ? (
           <MaterializedPayload
-            key={`${payload.source}-${payload.schemaId}-${payload.typeId}-${index}`}
+            key={`${payload.source}-${payload.schemaId}-${payload.typeId ?? payload.messageTypeId}-${index}`}
             payload={payload}
           />
         ) : (

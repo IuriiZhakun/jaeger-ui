@@ -78,7 +78,15 @@ type SchemaValuesTypeConfig = {
   fields: readonly SchemaValuesFieldConfig[];
 };
 
+type SchemaValuesMessageConfig = {
+  argTypeIds?: readonly string[];
+  displayName?: string;
+  template?: string;
+  typeId?: string;
+};
+
 export type SchemaValuesRegistryConfig = {
+  messages?: Record<string, SchemaValuesMessageConfig>;
   schemaId: string;
   types: Record<string, SchemaValuesTypeConfig>;
 };
