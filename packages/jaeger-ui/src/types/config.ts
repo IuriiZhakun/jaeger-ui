@@ -65,11 +65,10 @@ type MonitorConfig = {
 };
 
 export type SchemaValuesFieldConfig = {
-  duplicateKeyPolicy?: 'preserve_array' | 'fail';
   name: string;
   optional?: boolean;
   rowType?: string;
-  type: 'array' | 'boolean' | 'integer' | 'kv_pairs' | 'number' | 'object' | 'rows' | 'string';
+  type: 'boolean' | 'integer' | 'number' | 'object' | 'rows' | 'string';
   typeId?: string;
 };
 

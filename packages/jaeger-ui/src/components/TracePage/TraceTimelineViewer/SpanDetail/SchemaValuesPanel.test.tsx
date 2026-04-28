@@ -31,12 +31,7 @@ const schemaValuesConfig: SchemaValuesConfig = {
 };
 
 const span: IOtelSpan = {
-  attributes: [
-    { key: 'payload.schema_id', value: 'demo.hello.v1' },
-    { key: 'payload.type_id', value: 'demo.hello_world.v1' },
-    { key: 'payload.encoding', value: 'schema_values_json' },
-    { key: 'payload.values_json', value: '["hello from Rust OpenTelemetry demo","rust-otel-hello"]' },
-  ],
+  attributes: [{ key: 'sv', value: '[1,"hello from Rust OpenTelemetry demo","rust-otel-hello"]' }],
   childSpans: [],
   depth: 0,
   duration: 10 as IOtelSpan['duration'],
@@ -72,7 +67,7 @@ describe('<SchemaValuesPanel>', () => {
     expect(materializedMessage).toHaveTextContent('rust-otel-hello');
   });
 
-  it('renders a registry message type id carrier without legacy encoding metadata', () => {
+  it('renders registry message type id metadata without legacy encoding metadata', () => {
     render(
       <SchemaValuesPanel
         schemaValuesConfig={schemaValuesConfig}
@@ -95,6 +90,6 @@ describe('<SchemaValuesPanel>', () => {
     render(<SchemaValuesPanel schemaValuesConfig={{ enabled: true, registries: [] }} span={span} />);
 
     expect(screen.getByTestId('schema-values-error')).toBeInTheDocument();
-    expect(screen.getByText(/unknown_schema_id/)).toBeInTheDocument();
+    expect(screen.getByText(/unknown_message_type_id/)).toBeInTheDocument();
   });
 });

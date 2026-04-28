@@ -9,7 +9,7 @@ const schemaValuesConfig: SchemaValuesConfig = {
   enabled: true,
   registries: [
     {
-      schemaId: 'demo.hello.v1',
+      schemaId: 'demo.trading.v1',
       messages: {
         '1': { displayName: 'Demo Hello World', typeId: 'demo.hello_world.v1' },
         '2': {
@@ -24,7 +24,6 @@ const schemaValuesConfig: SchemaValuesConfig = {
           fields: [
             { name: 'message', type: 'string' },
             { name: 'sequence', type: 'integer' },
-            { name: 'attributes', type: 'kv_pairs', duplicateKeyPolicy: 'preserve_array' },
             { name: 'truncation', type: 'object', typeId: 'demo.truncation.v1', optional: true },
           ],
         },
@@ -84,14 +83,9 @@ const schemaValuesConfig: SchemaValuesConfig = {
   ],
 };
 
-function makeSpan(valuesJson: string, schemaId = 'demo.hello.v1'): IOtelSpan {
+function makeSpan(attributes = [{ key: 'sv', value: '[1,"registry hello",7,[false,""]]' }]): IOtelSpan {
   return {
-    attributes: [
-      { key: 'payload.schema_id', value: schemaId },
-      { key: 'payload.type_id', value: 'demo.hello_world.v1' },
-      { key: 'payload.encoding', value: 'schema_values_json' },
-      { key: 'payload.values_json', value: valuesJson },
-    ],
+    attributes,
     childSpans: [],
     depth: 0,
     duration: 10 as IOtelSpan['duration'],
@@ -114,57 +108,19 @@ function makeSpan(valuesJson: string, schemaId = 'demo.hello.v1'): IOtelSpan {
 }
 
 describe('materializeSchemaValuesPayloads', () => {
-  it('decodes configured schema-values span attributes into a named message object', () => {
-    const results = materializeSchemaValuesPayloads(
-      makeSpan('["hello from Rust OpenTelemetry demo",7,[["route","demo"],["route","fork"]],[false,""]]'),
-      schemaValuesConfig
-    );
-
-    expect(results).toEqual([
-      {
-        decoded: {
-          attributes: { route: ['demo', 'fork'] },
-          message: 'hello from Rust OpenTelemetry demo',
-          sequence: 7,
-          truncation: { omitted: '', truncated: false },
-        },
-        displayName: 'Demo Hello World',
-        encoding: 'schema_values_json',
-        schemaId: 'demo.hello.v1',
-        source: 'span attributes',
-        status: 'decoded',
-        typeId: 'demo.hello_world.v1',
-      },
-    ]);
-  });
-
-  it('returns a materialization error for unknown schema ids instead of guessing field names', () => {
-    const results = materializeSchemaValuesPayloads(
-      makeSpan('["hello",1,[],null]', 'unknown.v1'),
-      schemaValuesConfig
-    );
-
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({ errorCode: 'unknown_schema_id', status: 'error' });
-  });
-
   it('decodes registry messageTypeId carrier with no per-event schema metadata', () => {
-    const span = makeSpan('[]');
-    span.attributes = [{ key: 'sv', value: '[1,"registry hello",7,[],[false,""]]' }];
-
-    const results = materializeSchemaValuesPayloads(span, schemaValuesConfig);
+    const results = materializeSchemaValuesPayloads(makeSpan(), schemaValuesConfig);
 
     expect(results).toEqual([
       {
         decoded: {
-          attributes: {},
           message: 'registry hello',
           sequence: 7,
           truncation: { omitted: '', truncated: false },
         },
         displayName: 'Demo Hello World',
         messageTypeId: '1',
-        schemaId: 'demo.hello.v1',
+        schemaId: 'demo.trading.v1',
         source: 'span attributes',
         status: 'decoded',
         typeId: 'demo.hello_world.v1',
@@ -172,9 +128,8 @@ describe('materializeSchemaValuesPayloads', () => {
     ]);
   });
 
-  it('decodes registry messageTypeId carrier with multiple typed arguments', () => {
-    const span = makeSpan('[]');
-    span.attributes = [
+  it('decodes nested registry messages with multiple typed arguments', () => {
+    const span = makeSpan([
       {
         key: 'sv',
         value:
@@ -183,45 +138,64 @@ describe('materializeSchemaValuesPayloads', () => {
           '["1 Algorithm Ave","London","UK","N1 1AA"]],' +
           '[["SKU-OTEL-001",2,19.95],["SKU-JAEGER-002",1,7.5]],true]]',
       },
-    ];
+    ]);
 
     const results = materializeSchemaValuesPayloads(span, schemaValuesConfig);
 
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({
-      displayName: 'Demo Trade Order Message',
-      messageTypeId: '2',
-      schemaId: 'demo.hello.v1',
-      status: 'decoded',
-    });
-    expect(results[0].status === 'decoded' ? results[0].decoded : {}).toMatchObject({
-      args: [
-        {
-          displayName: 'Demo Trade Accepted',
-          typeId: 'demo.trade_accepted.v1',
-          value: { tradeId: 'TRADE-20260427-0001' },
+    expect(results).toEqual([
+      {
+        decoded: {
+          args: [
+            {
+              displayName: 'Demo Trade Accepted',
+              typeId: 'demo.trade_accepted.v1',
+              value: {
+                price: 99.875,
+                quantity: 10,
+                side: 'BUY',
+                symbol: 'UST-10Y',
+                tradeId: 'TRADE-20260427-0001',
+              },
+            },
+            {
+              displayName: 'Demo Order Created',
+              typeId: 'demo.order_created.v1',
+              value: {
+                customer: {
+                  address: {
+                    city: 'London',
+                    country: 'UK',
+                    postalCode: 'N1 1AA',
+                    street: '1 Algorithm Ave',
+                  },
+                  customerId: 'CUSTOMER-42',
+                  name: 'Ada Lovelace',
+                },
+                expedited: true,
+                items: [
+                  { quantity: 2, sku: 'SKU-OTEL-001', unitPrice: 19.95 },
+                  { quantity: 1, sku: 'SKU-JAEGER-002', unitPrice: 7.5 },
+                ],
+                orderId: 'ORDER-20260427-0001',
+              },
+            },
+          ],
+          template: 'for trade {} order {}',
         },
-        {
-          displayName: 'Demo Order Created',
-          typeId: 'demo.order_created.v1',
-          value: { orderId: 'ORDER-20260427-0001' },
-        },
-      ],
-      template: 'for trade {} order {}',
-    });
+        displayName: 'Demo Trade Order Message',
+        messageTypeId: '2',
+        schemaId: 'demo.trading.v1',
+        source: 'span attributes',
+        status: 'decoded',
+      },
+    ]);
   });
 
-  it('extracts complete schema-values envelopes from event attributes', () => {
-    const span = makeSpan('[]');
-    span.attributes = [];
+  it('extracts registry carriers from span event attributes', () => {
+    const span = makeSpan([]);
     span.events = [
       {
-        attributes: [
-          { key: 'payload.schema_id', value: 'demo.hello.v1' },
-          { key: 'payload.type_id', value: 'demo.hello_world.v1' },
-          { key: 'payload.encoding', value: 'schema_values_json' },
-          { key: 'payload.values_json', value: '["event hello",2,[]]' },
-        ],
+        attributes: [{ key: 'sv', value: '[1,"event hello",2]' }],
         name: 'schema-values',
         timestamp: 10 as IOtelSpan['startTime'],
       },
@@ -229,11 +203,95 @@ describe('materializeSchemaValuesPayloads', () => {
 
     const results = materializeSchemaValuesPayloads(span, schemaValuesConfig);
 
+    expect(results).toEqual([
+      {
+        decoded: { message: 'event hello', sequence: 2, truncation: null },
+        displayName: 'Demo Hello World',
+        messageTypeId: '1',
+        schemaId: 'demo.trading.v1',
+        source: 'schema-values attributes #1',
+        status: 'decoded',
+        typeId: 'demo.hello_world.v1',
+      },
+    ]);
+  });
+
+  it('returns no payloads when schema-values config is disabled', () => {
+    expect(materializeSchemaValuesPayloads(makeSpan(), { ...schemaValuesConfig, enabled: false })).toEqual(
+      []
+    );
+  });
+
+  it('returns an explicit error for malformed registry carrier JSON', () => {
+    const results = materializeSchemaValuesPayloads(
+      makeSpan([{ key: 'sv', value: '[' }]),
+      schemaValuesConfig
+    );
+
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
-      decoded: { attributes: {}, message: 'event hello', sequence: 2, truncation: null },
-      source: 'schema-values attributes #1',
-      status: 'decoded',
+      errorCode: 'malformed_registry_message_json',
+      source: 'span attributes',
+      status: 'error',
     });
+  });
+
+  it('returns an explicit error for unknown messageTypeId values', () => {
+    const results = materializeSchemaValuesPayloads(
+      makeSpan([{ key: 'sv', value: '[999,"hello"]' }]),
+      schemaValuesConfig
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      errorCode: 'unknown_message_type_id',
+      messageTypeId: '999',
+      source: 'span attributes',
+      status: 'error',
+    });
+  });
+
+  it('rejects ambiguous messageTypeId definitions across configured registries', () => {
+    const results = materializeSchemaValuesPayloads(makeSpan(), {
+      enabled: true,
+      registries: [
+        ...schemaValuesConfig.registries!,
+        {
+          schemaId: 'another.v1',
+          messages: { '1': { typeId: 'another.hello.v1' } },
+          types: { 'another.hello.v1': { fields: [{ name: 'message', type: 'string' }] } },
+        },
+      ],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ errorCode: 'ambiguous_message_type_id', status: 'error' });
+  });
+
+  it('rejects message definitions that define both typeId and argTypeIds', () => {
+    const results = materializeSchemaValuesPayloads(makeSpan(), {
+      enabled: true,
+      registries: [
+        {
+          ...schemaValuesConfig.registries![0],
+          messages: {
+            '1': { argTypeIds: ['demo.hello_world.v1'], typeId: 'demo.hello_world.v1' },
+          },
+        },
+      ],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ errorCode: 'invalid_message_definition', status: 'error' });
+  });
+
+  it('rejects payloads with more positional values than the configured type fields', () => {
+    const results = materializeSchemaValuesPayloads(
+      makeSpan([{ key: 'sv', value: '[1,"registry hello",7,[false,""],"extra"]' }]),
+      schemaValuesConfig
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ errorCode: 'extra_values', status: 'error' });
   });
 });

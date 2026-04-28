@@ -17,6 +17,23 @@ type SchemaValuesPanelProps = {
   span: IOtelSpan;
 };
 
+const jsonViewStyles = {
+  ...defaultStyles,
+  container: 'json-markup SchemaValuesPanel--json',
+  label: 'json-markup-key',
+  stringValue: 'json-markup-string',
+  collapseIcon: 'json-markup-icon-collapse',
+  collapsedContent: 'json-markup-collapse-content',
+  expandIcon: 'json-markup-icon-expand',
+  numberValue: 'json-markup-number',
+  booleanValue: 'json-markup-bool',
+  nullValue: 'json-markup-null',
+  undefinedValue: 'json-markup-undefined',
+  basicChildStyle: 'json-markup-child',
+  punctuation: 'json-markup-puncuation',
+  otherValue: 'json-markup-other',
+};
+
 function MaterializedPayload({ payload }: { payload: Extract<TSchemaValuesPayload, { status: 'decoded' }> }) {
   return (
     <section className="SchemaValuesPanel--item" data-testid="schema-values-materialized-message">
@@ -27,51 +44,22 @@ function MaterializedPayload({ payload }: { payload: Extract<TSchemaValuesPayloa
       <dl className="SchemaValuesPanel--metadata">
         <dt>Schema ID</dt>
         <dd>{payload.schemaId}</dd>
-        {payload.messageTypeId && (
-          <>
-            <dt>Message Type ID</dt>
-            <dd>{payload.messageTypeId}</dd>
-          </>
-        )}
+        <dt>Message Type ID</dt>
+        <dd>{payload.messageTypeId}</dd>
         {payload.typeId && (
           <>
             <dt>Type ID</dt>
             <dd>{payload.typeId}</dd>
           </>
         )}
-        {payload.encoding && (
-          <>
-            <dt>Encoding</dt>
-            <dd>{payload.encoding}</dd>
-          </>
-        )}
       </dl>
-      <JsonView
-        data={payload.decoded}
-        shouldExpandNode={allExpanded}
-        style={{
-          ...defaultStyles,
-          container: 'json-markup SchemaValuesPanel--json',
-          label: 'json-markup-key',
-          stringValue: 'json-markup-string',
-          collapseIcon: 'json-markup-icon-collapse',
-          collapsedContent: 'json-markup-collapse-content',
-          expandIcon: 'json-markup-icon-expand',
-          numberValue: 'json-markup-number',
-          booleanValue: 'json-markup-bool',
-          nullValue: 'json-markup-null',
-          undefinedValue: 'json-markup-undefined',
-          basicChildStyle: 'json-markup-child',
-          punctuation: 'json-markup-puncuation',
-          otherValue: 'json-markup-other',
-        }}
-      />
+      <JsonView data={payload.decoded} shouldExpandNode={allExpanded} style={jsonViewStyles} />
     </section>
   );
 }
 
 function PayloadError({ payload }: { payload: Extract<TSchemaValuesPayload, { status: 'error' }> }) {
-  const context = [payload.schemaId, payload.typeId, payload.source].filter(Boolean).join(' · ');
+  const context = [payload.schemaId, payload.messageTypeId, payload.source].filter(Boolean).join(' · ');
   return (
     <Alert
       className="SchemaValuesPanel--error"
