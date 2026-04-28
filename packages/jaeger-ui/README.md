@@ -57,3 +57,53 @@ When running the UI in development mode via `npm start`, you can provide custom 
 An example JSON config file is provided at [jaeger-ui.config.example.json](./jaeger-ui.config.example.json). You can copy it to `jaeger-ui.config.json` and modify it as needed.
 
 These local config files are ignored by git (see `.gitignore`).
+
+### Schema values materialization
+
+`schemaValues` is an optional span-detail helper for compact structured telemetry. When enabled, Jaeger UI looks for an `sv` span or span-event attribute. The value must be a JSON array whose first item is a configured `messageTypeId`; the remaining positional values are decoded through the configured registry and rendered as named fields.
+
+For example, an application can emit only:
+
+```json
+[1, "hello from checkout", 7]
+```
+
+with this UI config:
+
+```json
+{
+  "schemaValues": {
+    "enabled": true,
+    "registries": [
+      {
+        "schemaId": "demo.v1",
+        "messages": {
+          "1": {
+            "displayName": "Demo Hello",
+            "typeId": "demo.hello.v1"
+          }
+        },
+        "types": {
+          "demo.hello.v1": {
+            "fields": [
+              { "name": "message", "type": "string" },
+              { "name": "sequence", "type": "integer" }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+The UI renders the compact payload as:
+
+```json
+{
+  "message": "hello from checkout",
+  "sequence": 7
+}
+```
+
+Supported field types are `string`, `number`, `integer`, `boolean`, `object`, and `rows`. `object` fields reference another configured type with `typeId`; `rows` fields decode an array of positional rows using `rowType`.

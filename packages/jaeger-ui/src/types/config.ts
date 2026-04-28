@@ -64,6 +64,37 @@ type MonitorConfig = {
   docsLink?: string;
 };
 
+export type SchemaValuesFieldConfig = {
+  name: string;
+  optional?: boolean;
+  rowType?: string;
+  type: 'boolean' | 'integer' | 'number' | 'object' | 'rows' | 'string';
+  typeId?: string;
+};
+
+type SchemaValuesTypeConfig = {
+  displayName?: string;
+  fields: readonly SchemaValuesFieldConfig[];
+};
+
+type SchemaValuesMessageConfig = {
+  argTypeIds?: readonly string[];
+  displayName?: string;
+  template?: string;
+  typeId?: string;
+};
+
+export type SchemaValuesRegistryConfig = {
+  messages?: Record<string, SchemaValuesMessageConfig>;
+  schemaId: string;
+  types: Record<string, SchemaValuesTypeConfig>;
+};
+
+export type SchemaValuesConfig = {
+  enabled?: boolean;
+  registries?: readonly SchemaValuesRegistryConfig[];
+};
+
 export type TraceGraphConfig = {
   // layoutManagerMemory controls the total memeory available for the GraphViz
   // Emscripten module instance. The value should be a power of two.
@@ -180,6 +211,9 @@ export type Config = {
 
   // traceGraph controls the trace graph under trace page
   traceGraph?: TraceGraphConfig;
+
+  // schemaValues enables materializing compact schema/type/value telemetry into named objects in span details.
+  schemaValues?: SchemaValuesConfig;
 
   // Disables the file upload control.
   disableFileUploadControl: boolean;
