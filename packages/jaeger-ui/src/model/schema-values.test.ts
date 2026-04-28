@@ -10,6 +10,14 @@ const schemaValuesConfig: SchemaValuesConfig = {
   registries: [
     {
       schemaId: 'demo.hello.v1',
+      messages: {
+        '1': { displayName: 'Demo Hello World', typeId: 'demo.hello_world.v1' },
+        '2': {
+          argTypeIds: ['demo.trade_accepted.v1', 'demo.order_created.v1'],
+          displayName: 'Demo Trade Order Message',
+          template: 'for trade {} order {}',
+        },
+      },
       types: {
         'demo.hello_world.v1': {
           displayName: 'Demo Hello World',
@@ -25,6 +33,50 @@ const schemaValuesConfig: SchemaValuesConfig = {
           fields: [
             { name: 'truncated', type: 'boolean' },
             { name: 'omitted', type: 'string' },
+          ],
+        },
+        'demo.trade_accepted.v1': {
+          displayName: 'Demo Trade Accepted',
+          fields: [
+            { name: 'tradeId', type: 'string' },
+            { name: 'symbol', type: 'string' },
+            { name: 'side', type: 'string' },
+            { name: 'quantity', type: 'integer' },
+            { name: 'price', type: 'number' },
+          ],
+        },
+        'demo.address.v1': {
+          displayName: 'Demo Address',
+          fields: [
+            { name: 'street', type: 'string' },
+            { name: 'city', type: 'string' },
+            { name: 'country', type: 'string' },
+            { name: 'postalCode', type: 'string' },
+          ],
+        },
+        'demo.customer.v1': {
+          displayName: 'Demo Customer',
+          fields: [
+            { name: 'customerId', type: 'string' },
+            { name: 'name', type: 'string' },
+            { name: 'address', type: 'object', typeId: 'demo.address.v1' },
+          ],
+        },
+        'demo.order_item.v1': {
+          displayName: 'Demo Order Item',
+          fields: [
+            { name: 'sku', type: 'string' },
+            { name: 'quantity', type: 'integer' },
+            { name: 'unitPrice', type: 'number' },
+          ],
+        },
+        'demo.order_created.v1': {
+          displayName: 'Demo Order Created',
+          fields: [
+            { name: 'orderId', type: 'string' },
+            { name: 'customer', type: 'object', typeId: 'demo.customer.v1' },
+            { name: 'items', type: 'rows', rowType: 'demo.order_item.v1' },
+            { name: 'expedited', type: 'boolean' },
           ],
         },
       },
@@ -94,6 +146,69 @@ describe('materializeSchemaValuesPayloads', () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({ errorCode: 'unknown_schema_id', status: 'error' });
+  });
+
+  it('decodes registry messageTypeId carrier with no per-event schema metadata', () => {
+    const span = makeSpan('[]');
+    span.attributes = [{ key: 'sv', value: '[1,"registry hello",7,[],[false,""]]' }];
+
+    const results = materializeSchemaValuesPayloads(span, schemaValuesConfig);
+
+    expect(results).toEqual([
+      {
+        decoded: {
+          attributes: {},
+          message: 'registry hello',
+          sequence: 7,
+          truncation: { omitted: '', truncated: false },
+        },
+        displayName: 'Demo Hello World',
+        messageTypeId: '1',
+        schemaId: 'demo.hello.v1',
+        source: 'span attributes',
+        status: 'decoded',
+        typeId: 'demo.hello_world.v1',
+      },
+    ]);
+  });
+
+  it('decodes registry messageTypeId carrier with multiple typed arguments', () => {
+    const span = makeSpan('[]');
+    span.attributes = [
+      {
+        key: 'sv',
+        value:
+          '[2,["TRADE-20260427-0001","UST-10Y","BUY",10,99.875],' +
+          '["ORDER-20260427-0001",["CUSTOMER-42","Ada Lovelace",' +
+          '["1 Algorithm Ave","London","UK","N1 1AA"]],' +
+          '[["SKU-OTEL-001",2,19.95],["SKU-JAEGER-002",1,7.5]],true]]',
+      },
+    ];
+
+    const results = materializeSchemaValuesPayloads(span, schemaValuesConfig);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      displayName: 'Demo Trade Order Message',
+      messageTypeId: '2',
+      schemaId: 'demo.hello.v1',
+      status: 'decoded',
+    });
+    expect(results[0].status === 'decoded' ? results[0].decoded : {}).toMatchObject({
+      args: [
+        {
+          displayName: 'Demo Trade Accepted',
+          typeId: 'demo.trade_accepted.v1',
+          value: { tradeId: 'TRADE-20260427-0001' },
+        },
+        {
+          displayName: 'Demo Order Created',
+          typeId: 'demo.order_created.v1',
+          value: { orderId: 'ORDER-20260427-0001' },
+        },
+      ],
+      template: 'for trade {} order {}',
+    });
   });
 
   it('extracts complete schema-values envelopes from event attributes', () => {

@@ -14,6 +14,9 @@ const schemaValuesConfig: SchemaValuesConfig = {
   registries: [
     {
       schemaId: 'demo.hello.v1',
+      messages: {
+        '1': { displayName: 'Demo Hello World', typeId: 'demo.hello_world.v1' },
+      },
       types: {
         'demo.hello_world.v1': {
           displayName: 'Demo Hello World',
@@ -67,6 +70,25 @@ describe('<SchemaValuesPanel>', () => {
     expect(materializedMessage).toHaveTextContent('hello from Rust OpenTelemetry demo');
     expect(materializedMessage).toHaveTextContent('serviceName');
     expect(materializedMessage).toHaveTextContent('rust-otel-hello');
+  });
+
+  it('renders a registry message type id carrier without legacy encoding metadata', () => {
+    render(
+      <SchemaValuesPanel
+        schemaValuesConfig={schemaValuesConfig}
+        span={{
+          ...span,
+          attributes: [{ key: 'sv', value: '[1,"hello from registry","rust-otel-hello"]' }],
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('schema-values-panel')).toBeInTheDocument();
+    expect(screen.getByText('Demo Hello World')).toBeInTheDocument();
+    expect(screen.getByText('Message Type ID')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.queryByText('Encoding')).not.toBeInTheDocument();
+    expect(screen.getByTestId('schema-values-materialized-message')).toHaveTextContent('hello from registry');
   });
 
   it('renders an explicit warning when a payload cannot be decoded', () => {
